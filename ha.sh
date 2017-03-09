@@ -1,75 +1,123 @@
 #!/bin/bash
 
 # GLOBAL VARIABLES
-MODE=$1
 PU_PATH=/opt/nimsoft/bin/pu
-LOGIN=administrator
-PASSWORD=Descartes2016
+LOGIN=
+PASSWORD=
 FAILED_PATTERN="failed"
+rc='0'
 
-# puCommand function
-function puCommand {
-    OUTPUT="$($PU_PATH -u $LOGIN -p $PASSWORD $1 $2 $3)"
+#
+# Logger function (to log message with the date)
+# log $message
+#
+function log {
+    local DATE=$(date +"%D")
+    local TIME=$(date +"%T")
+    echo "$DATE $TIME - $1"
+}
+
+#
+# execute pu command for probe activation/deactivation
+# probeCMD $probeName 
+# return {1|0} - 1 for true (ok) and 0 for false (ko).
+#
+function probeCMD {
+    OUTPUT="$($PU_PATH -u $LOGIN -p $PASSWORD controller probe_activate $1)"
     case "$OUTPUT" in 
-        *"$FAILED_PATTERN"* ) local rc=0;;
-        * ) local rc=1;;
+        *"$FAILED_PATTERN"* ) rc='0';;
+        * ) rc='1';;
     esac
 }
 
-# Function queue_active / queue_disabling ??
-
-# PROBE ACTIVATE
-function probe_activate {
-    local result=$(puCommand controller probe_activate $1)
+#
+# queueCMD $queueName 
+# return {1|0} - 1 for true (ok) and 0 for false (ko).
+#
+function queueCMD {
+    OUTPUT="$($PU_PATH -u $LOGIN -p $PASSWORD hub queue_active $1 yes)"
+    case "$OUTPUT" in 
+        *"$FAILED_PATTERN"* ) rc='0';;
+        * ) rc='1';;
+    esac
 }
 
-# PROBE DISABLING
-function probe_disabling {
-    local result=$(puCommand controller probe_deactivate $1)
-}
-
-# PROBE ARRAY ( All probes to foreach )
+# Probes list to enable
 probesArray=(
-    'net_connect' 
-    'wasp' 
-    'automated_deployment_engine'
-    'data_engine' 
-    'alarm_enrichment' 
-    'discovery_server' 
-    'nas' 
-    'cm_data_import' 
-    'ace' 
-    'ppm'
-    'fault_correlation_engine'
-    'dirscan'
-    'processes'
-    'maintenance_mode' 
-    'mon_config_service' 
-    'mpse' 
-    'nis_server' 
-    'relationship_services' 
-    'sla_engine' 
-    'topology_agent' 
-    'trellis' 
+    'data_engine'
+    'alarm_enrichment'
+    'ace'
+    'net_connect'
+    'wasp'
     'udm_manager'
+    'rsp'
+    'automated_deployment_engine'
+    'discovery_server'
+    'cm_data_import' 
+    'prediction_engine'
+    'ppm'
+    'dirscan'
+    'nas'
+    'processes'
+    'qos_processor'
+    'health_index'
+    'maintenance_mode'
+    'mon_config_service'
+    'mpse'
+    'nis_server'
+    'relationship_services'
+    'sla_engine'
+    'topology_agent'
+    'trellis'
     'cdm'
     'baseline_engine'
+    'fault_correlation_engine'
 )
 
-echo "Activated mode is $MODE"
+# Queues name to enable
+queuesArray=(
+    'alarm_enrichment'
+    'audit',
+    'data_engine'
+)
 
-# FOREACH
+log "Starting CA UIM Bascule - Activation script"
+
+#
+# Foreach (probes and queues) call action
+#
+log "------------------------------------"
+log "Starting activation of all probes..."
 for probeName in "${probesArray[@]}"; do
-    if [ MODE='actif' ]; then
-        returncode=$(probe_activate $probeName)
-    else 
-        returncode=$(probe_disabling $probeName) 
-    fi
+    log "Preparing callback probe_activate for $probeName"
+    probeCMD $probeName
 
-    # If failed ?
-    if [ returncode=1 ]; then 
-        echo "=> Callback for $probeName success"
+    # Check return code from our function and echo result
+    if [ "${rc}" -eq "1" ]; then 
+        log "Callback state : success"
     else 
-        echo "=> Callback for $probeName failed"
+        log "Callback state : failed"
     fi
+    log "------------------------------------"
 done
+
+# (Uncomment if you want to use queue)
+<<QUEUE
+log "------------------------------------"
+log "Starting activation of all queues..."
+for queueName in "${queuesArray[@]}"; do 
+    log "Preparing callback queue_activate yes for $queueName"
+    queueCMD $probeName
+
+    # Check return code from our function and echo result
+    if [ "${rc}" -eq "1" ]; then 
+        log "Callback state : success"
+    else 
+        log "Callback state : failed"
+    fi
+    log "------------------------------------"
+done 
+QUEUE
+
+# End the script with 0 (OK)
+exit 0
